@@ -78,7 +78,7 @@ public class MainActivity extends Activity {
                 if (req.isForMainFrame()) {
                     view.loadDataWithBaseURL(null,
                         "<html><meta name='viewport' content='width=device-width'><body style='font-family:sans-serif;text-align:center;padding:60px 20px;color:#1c2421'>"
-                        + "<h2>連不上網路</h2><p>請確認網路後再試一次。</p>"
+                        + "<h2>網路錯誤</h2>"
                         + "<button style='font-size:18px;padding:14px 28px;border:0;border-radius:12px;background:#0f766e;color:#fff' onclick=\"location.href='" + Api.BASE + "/'\">重新整理</button></body></html>",
                         "text/html", "utf-8", null);
                 }
@@ -127,30 +127,22 @@ public class MainActivity extends Activity {
     private void nextSetupStep() {
         if (dialog != null && dialog.isShowing()) return;
         if (!hasFine() || !hasNotif()) {
-            if (!skipped.contains("basic")) ask("basic", "需要定位權限",
-                    "打卡時要確認你在工地現場，請按「允許」定位（建議選「精確位置」）。\n\n通知權限用來告訴你自動打卡的結果。",
-                    "下一步", this::requestBasic);
+            if (!skipped.contains("basic")) ask("basic", "定位", "請允許定位與通知。", "好", this::requestBasic);
             return;
         }
         if (!hasBg()) {
-            if (!skipped.contains("bg")) ask("bg", "開啟自動打卡",
-                    "上下班時間 App 會自動幫你打卡，不用打開。\n\n接下來的畫面請選「一律允許」（或「永遠允許」），只有上下班前後才會定位。",
-                    "前往設定", () -> requestPermissions(new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION}, REQ_BG));
+            if (!skipped.contains("bg")) ask("bg", "自動打卡", "下一頁請選「一律允許」。", "好", () -> requestPermissions(new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION}, REQ_BG));
             return;
         }
         if (!Scheduler.canExact(this)) {
-            if (!skipped.contains("exact")) ask("exact", "允許準時提醒",
-                    "請在接下來的畫面開啟「鬧鐘和提醒」，自動打卡才會準時。",
-                    "前往設定", () -> {
+            if (!skipped.contains("exact")) ask("exact", "準時打卡", "下一頁請開啟。", "好", () -> {
                         try { startActivity(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:" + getPackageName()))); }
                         catch (Exception e) { skipped.add("exact"); }
                     });
             return;
         }
         if (!ignoringBattery()) {
-            if (!skipped.contains("battery")) ask("battery", "避免被省電關掉",
-                    "有些手機會為了省電把 App 關掉，導致沒自動打卡。請在接下來的視窗按「允許」。",
-                    "允許", () -> {
+            if (!skipped.contains("battery")) ask("battery", "背景執行", "下一個視窗請按「允許」。", "好", () -> {
                         try {
                             @SuppressLint("BatteryLife")
                             Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName()));

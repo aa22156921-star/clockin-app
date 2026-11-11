@@ -57,7 +57,7 @@ public class PingService extends Service {
         Notification n = new Notification.Builder(this, CH_WORK)
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .setContentTitle("出勤打卡")
-                .setContentText("正在自動打卡定位…")
+                .setContentText("打卡中")
                 .setOngoing(true)
                 .build();
         try {
@@ -123,27 +123,27 @@ public class PingService extends Service {
                 JSONObject r = Api.post(PingService.this, "/api/ping", body);
                 int status = r.optInt("_status");
                 if (status == 401) {
-                    text = "這支手機尚未綁定，請打開 App 輸入姓名。";
+                    text = "請打開 App 輸入姓名";
                 } else if (!r.optBoolean("ok")) {
-                    text = "打卡失敗：" + r.optString("error", "伺服器錯誤");
+                    text = "打卡失敗";
                     retry = true;
                 } else {
                     JSONObject hit = r.optJSONObject("hit");
                     JSONObject at = r.optJSONObject("at");
-                    String place = loc == null ? "沒有取得定位" : at != null ? at.optString("name") + "（約 " + at.optInt("dist") + " 公尺）" : "無對應上班地點";
+                    String place = loc == null ? "沒有定位" : at != null ? at.optString("name") : "無對應上班地點";
                     if (hit != null) {
                         String kind = "in".equals(hit.optString("kind")) ? "上班" : "下班";
                         boolean inRange = !r.isNull("inRange") && r.optBoolean("inRange");
-                        title = kind + (loc == null ? "打卡：沒有定位" : inRange ? "打卡成功" : "打卡：不在工地範圍");
+                        title = kind + (loc == null ? "：沒有定位" : inRange ? "打卡 ✓" : "：不在工地範圍");
                     } else {
-                        title = "已記錄位置";
+                        title = "已記錄";
                     }
-                    text = "目前位置：" + place;
+                    text = place;
                     if (loc == null) retry = true;
                 }
             } catch (Exception e) {
                 Log.w(TAG, "ping failed", e);
-                text = "網路錯誤，稍後會再試一次。";
+                text = "網路錯誤，稍後重試";
                 retry = true;
             }
             notifyResult(title, text);
