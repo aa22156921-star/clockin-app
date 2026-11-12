@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "clockin-app"
-include ':app'
+include ':app', ':admin'

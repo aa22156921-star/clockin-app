@@ -27,31 +27,33 @@ jobs:
         run: gradle assembleRelease --no-daemon --stacktrace
 
       - name: 改檔名
-        run: cp app/build/outputs/apk/release/app-release.apk "出勤打卡-v1.0.${{ github.run_number }}.apk"
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk "出勤打卡-v1.0.${{ github.run_number }}.apk"
+          cp admin/build/outputs/apk/release/admin-release.apk "洪英後台-v1.0.${{ github.run_number }}.apk"
 
       - name: 上傳打包結果
         uses: actions/upload-artifact@v4
         with:
           name: 出勤打卡-apk
-          path: "出勤打卡-v1.0.${{ github.run_number }}.apk"
+          path: "*.apk"
 
       - name: 發佈下載版本
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: 出勤打卡 v1.0.${{ github.run_number }}
-          files: "出勤打卡-v1.0.${{ github.run_number }}.apk"
+          files: "*.apk"
           make_latest: true
 
       - name: 存一份到 dist 分支（方便後台上架）
         run: |
-          mkdir -p /tmp/dist && cp "出勤打卡-v1.0.${{ github.run_number }}.apk" /tmp/dist/clockin.apk
+          mkdir -p /tmp/dist && cp "出勤打卡-v1.0.${{ github.run_number }}.apk" /tmp/dist/clockin.apk && cp "洪英後台-v1.0.${{ github.run_number }}.apk" /tmp/dist/admin.apk
           echo "v1.0.${{ github.run_number }}" > /tmp/dist/VERSION
           git config user.name "github-actions"
           git config user.email "actions@users.noreply.github.com"
           git checkout --orphan dist
           git rm -rf . -q
           cp /tmp/dist/* .
-          git add clockin.apk VERSION
+          git add clockin.apk admin.apk VERSION
           git commit -m "APK v1.0.${{ github.run_number }}" -q
           git push -f origin dist
