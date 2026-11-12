@@ -13,13 +13,14 @@ import org.json.JSONObject;
 /**
  * 依伺服器上的班表排定自動打卡時間：
  * 上班前 5 分鐘、下班後 2 分鐘各定位一次（都落在前後 15 分鐘的打卡時段內）。
+ * 幹部另外依後台設定的時間定時定位。
  * 另外每 3 小時重新抓一次班表，避免班表更新後沒排到。
  */
 final class Scheduler {
     private static final String TAG = "ClockinScheduler";
     static final String ACTION_PING = "tw.clockin.app.PING";
     static final String ACTION_REFRESH = "tw.clockin.app.REFRESH";
-    private static final int MAX_SLOTS = 6;
+    private static final int MAX_SLOTS = 12;
     private static final long BEFORE_START = 5 * 60_000L;
     private static final long AFTER_END = 2 * 60_000L;
 
@@ -54,6 +55,18 @@ final class Scheduler {
                             Log.i(TAG, "排定自動打卡 slot " + slot + " at " + local);
                             slot++;
                         }
+                    }
+                }
+            }
+            // 幹部定時定位（例如週一到五 9:00、12:00、18:00），由後台設定
+            JSONArray checks = me.optJSONArray("checks");
+            if (checks != null) {
+                for (int i = 0; i < checks.length() && slot < MAX_SLOTS; i++) {
+                    long local = checks.getLong(i) - skew;
+                    if (local > System.currentTimeMillis() + 30_000L) {
+                        setExact(ctx, am, local, pingIntent(ctx, slot));
+                        Log.i(TAG, "排定定時定位 slot " + slot + " at " + local);
+                        slot++;
                     }
                 }
             }
