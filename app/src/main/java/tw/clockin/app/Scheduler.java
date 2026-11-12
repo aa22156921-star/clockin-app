@@ -20,6 +20,8 @@ final class Scheduler {
     private static final String TAG = "ClockinScheduler";
     static final String ACTION_PING = "tw.clockin.app.PING";
     static final String ACTION_REFRESH = "tw.clockin.app.REFRESH";
+    static final String ACTION_POLL = "tw.clockin.app.POLL";
+    private static final long POLL_EVERY = 10 * 60_000L; // 幹部上班時段：每 10 分鐘看一次後台有沒有要求「立即定位」
     private static final int MAX_SLOTS = 12;
     private static final long BEFORE_START = 5 * 60_000L;
     private static final long AFTER_END = 2 * 60_000L;
@@ -38,7 +40,17 @@ final class Scheduler {
         if (Api.deviceToken(ctx) == null) return; // 還沒綁定
         try {
             JSONObject me = Api.get(ctx, "/api/me");
-            if (!me.optBoolean("bound")) { cancelAll(ctx, am); return; }
+            if (!me.optBoolean("bound")) { cancelAll(ctx, am); am.cancel(pollIntent(ctx)); return; }
+            // 後台按了「立即定位」→ 馬上定位一次
+            if (me.optBoolean("locate")) {
+                try {
+                    Intent svc = new Intent(ctx, PingService.class);
+                    if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(svc); else ctx.startService(svc);
+                } catch (Exception e) { Log.w(TAG, "立即定位啟動失敗", e); }
+            }
+            // 在幹部上班時段內 → 10 分鐘後再檢查一次
+            if (me.optBoolean("poll")) setExact(ctx, am, System.currentTimeMillis() + POLL_EVERY, pollIntent(ctx));
+            else am.cancel(pollIntent(ctx));
             long serverNow = me.optLong("now", System.currentTimeMillis());
             long skew = serverNow - System.currentTimeMillis(); // 以伺服器時間為準
             JSONArray up = me.optJSONArray("upcoming");
@@ -79,6 +91,11 @@ final class Scheduler {
     static void retryLater(Context ctx, long delayMs) {
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
         setExact(ctx, am, System.currentTimeMillis() + delayMs, pingIntent(ctx, 90));
+    }
+
+    private static PendingIntent pollIntent(Context ctx) {
+        Intent i = new Intent(ctx, AlarmReceiver.class).setAction(ACTION_POLL);
+        return PendingIntent.getBroadcast(ctx, 2, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
 
     private static PendingIntent pingIntent(Context ctx, int slot) {

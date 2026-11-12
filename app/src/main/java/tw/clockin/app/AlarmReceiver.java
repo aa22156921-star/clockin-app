@@ -20,7 +20,7 @@ public class AlarmReceiver extends BroadcastReceiver {
                 Log.w("ClockinAlarm", "無法啟動定位服務", e);
                 Scheduler.retryLater(ctx, 3 * 60_000L);
             }
-        } else if (Scheduler.ACTION_REFRESH.equals(action)) {
+        } else if (Scheduler.ACTION_REFRESH.equals(action) || Scheduler.ACTION_POLL.equals(action)) {
             final PendingResult pr = goAsync();
             new Thread(() -> { try { Scheduler.refresh(ctx.getApplicationContext()); } finally { pr.finish(); } }).start();
         }
