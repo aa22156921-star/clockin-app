@@ -124,31 +124,31 @@ public class MainActivity extends Activity {
         return pm.isIgnoringBatteryOptimizations(getPackageName());
     }
 
+    // 盡量少跳窗：系統本身的權限視窗直接跳出，只有「一律允許」需要先說明一次
     private void nextSetupStep() {
         if (dialog != null && dialog.isShowing()) return;
         if (!hasFine() || !hasNotif()) {
-            if (!skipped.contains("basic")) ask("basic", "定位", "請允許定位與通知。", "好", this::requestBasic);
+            if (skipped.add("basic")) requestBasic();
             return;
         }
         if (!hasBg()) {
-            if (!skipped.contains("bg")) ask("bg", "自動打卡", "下一頁請選「一律允許」。", "好", () -> requestPermissions(new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION}, REQ_BG));
+            if (!skipped.contains("bg")) ask("bg", "最後一步", "下一頁請選\n「一律允許」\n\n上下班時才會自動定位", "好",
+                    () -> requestPermissions(new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION}, REQ_BG));
             return;
         }
         if (!Scheduler.canExact(this)) {
-            if (!skipped.contains("exact")) ask("exact", "準時打卡", "下一頁請開啟。", "好", () -> {
-                        try { startActivity(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:" + getPackageName()))); }
-                        catch (Exception e) { skipped.add("exact"); }
-                    });
+            if (skipped.add("exact")) {
+                try { startActivity(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:" + getPackageName()))); }
+                catch (Exception ignored) { }
+            }
             return;
         }
-        if (!ignoringBattery()) {
-            if (!skipped.contains("battery")) ask("battery", "背景執行", "下一個視窗請按「允許」。", "好", () -> {
-                        try {
-                            @SuppressLint("BatteryLife")
-                            Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName()));
-                            startActivity(i);
-                        } catch (Exception e) { skipped.add("battery"); }
-                    });
+        if (!ignoringBattery() && skipped.add("battery")) {
+            try {
+                @SuppressLint("BatteryLife")
+                Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName()));
+                startActivity(i);
+            } catch (Exception ignored) { }
         }
     }
 
@@ -159,6 +159,7 @@ public class MainActivity extends Activity {
                 .setCancelable(false)
                 .setPositiveButton(ok, (d, w) -> { skipped.add(key); action.run(); })
                 .setNegativeButton("稍後", (d, w) -> { skipped.add(key); nextSetupStep(); })
+                .setIcon(R.mipmap.ic_launcher)
                 .show();
     }
 
