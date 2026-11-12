@@ -94,6 +94,7 @@ public class MainActivity extends Activity {
         super.onResume();
         web.onResume();
         nextSetupStep();
+        if (hasFine() && hasBg()) Updater.check(this); // 權限都給了再檢查更新，避免同時跳太多視窗
     }
 
     @Override
