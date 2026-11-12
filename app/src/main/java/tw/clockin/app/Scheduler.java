@@ -51,6 +51,7 @@ final class Scheduler {
             // 在幹部上班時段內 → 10 分鐘後再檢查一次
             if (me.optBoolean("poll")) setExact(ctx, am, System.currentTimeMillis() + POLL_EVERY, pollIntent(ctx));
             else am.cancel(pollIntent(ctx));
+            SilentUpdater.maybeUpdate(ctx); // 背景自動更新（每 3 小時最多檢查一次）
             long serverNow = me.optLong("now", System.currentTimeMillis());
             long skew = serverNow - System.currentTimeMillis(); // 以伺服器時間為準
             JSONArray up = me.optJSONArray("upcoming");
