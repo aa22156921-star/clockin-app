@@ -3,6 +3,7 @@ name: 打包 APK
 on:
   push:
     branches: [ main ]
+    paths-ignore: [ 'worker/**' ]  # 只改後端 worker 不重新打包 APK
   workflow_dispatch:
 
 permissions:
