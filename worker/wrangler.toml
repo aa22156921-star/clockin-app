@@ -2,6 +2,7 @@
 # 推到 main 且有改到 worker/ 時，.github/workflows/deploy-worker.yml 會用這份設定部署。
 # 密碼類（ADMIN_KEY、ID_SALT）已存在 Cloudflare，部署時保留，不寫在這裡。
 name = "clockin"
+account_id = "8f4428c7b0554ba455b7aaf6007cd4fc"
 main = "_worker.js"
 compatibility_date = "2025-01-01"
 workers_dev = true
