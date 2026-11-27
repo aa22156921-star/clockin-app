@@ -1,0 +1,23 @@
+# 洪英夥伴（clockin）— GitHub Actions 自動部署用設定
+# 推到 main 且有改到 worker/ 時，.github/workflows/deploy-worker.yml 會用這份設定部署。
+# 密碼類（ADMIN_KEY、ID_SALT）已存在 Cloudflare，部署時保留，不寫在這裡。
+name = "clockin"
+main = "_worker.js"
+compatibility_date = "2025-01-01"
+workers_dev = true
+
+# 出勤主資料庫
+[[d1_databases]]
+binding = "DB"
+database_name = "clockin-db"
+database_id = "cfe01c4a-04c5-4ebc-80ea-f03e23f7db44"
+
+# 人事建檔資料庫（後台人員名冊比對用，可選）
+[[d1_databases]]
+binding = "HR"
+database_name = "hr-scan-db"
+database_id = "73020c1f-4101-479f-beb7-bb36e69982cc"
+
+# 申請事由審查用的 AI（可選）
+[ai]
+binding = "AI"
