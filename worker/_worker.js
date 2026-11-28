@@ -834,7 +834,7 @@ async function exceptionsData(env, date) {
   const items = [];
   for (const r of report) {
     const add = (level, what) => items.push({ level, what, date: r.date, name: r.name, empNo: r.empNo, shift: r.shift, start: r.start, end: r.end, site: r.site, leave: r.leave });
-    if (r.inStatus === 'missing' && r.outStatus === 'missing') { /* 未到班不通知 */ }
+    if (r.inStatus === 'missing' && r.outStatus === 'missing') add('red', '未到班'); // 有排班、整班沒打卡也沒請假
     else {
       if (r.inStatus === 'missing') add('red', '上班未打卡');
       if (r.inStatus === 'late') add('amber', '遲到 ' + (r.in && r.in.lateMin || '') + ' 分');
