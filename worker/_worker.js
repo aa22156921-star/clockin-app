@@ -611,7 +611,18 @@ async function apiPing(req, env) {
   const now = Date.now();
   const ok = isNum(b.lat) && isNum(b.lng) && Math.abs(b.lat) <= 90 && Math.abs(b.lng) <= 180;
   const err = ok ? null : String(b.err || 'no_location').slice(0, 40);
-  const kind = b.kind === 'in' || b.kind === 'out' || b.kind === 'check' ? b.kind : null; // 員工自己按的上班／下班／值勤打卡（check 只給後台督導看，不算出勤）
+  let kind = b.kind === 'in' || b.kind === 'out' || b.kind === 'check' ? b.kind : null; // 員工自己按的上班／下班／值勤打卡（check 只給後台督導看，不算出勤）
+
+  // 一般員工有排班：上班時段在排班案場範圍內打開系統（或背景自動定位）→ 自動算到班（記成上班）
+  if (!kind && ok && !(emp.roam || emp.auto_ping)) {
+    const W0 = WINDOW_MIN * 60e3, sh = (await shiftsAround(env, emp.id, now)).find((x) => now >= x.start - W0 && now < x.end - W0);
+    if (sh) {
+      const ss = await activeSites(env), sid = sh.site_id || emp.site_id, as = sid ? ss.find((x) => x.id === sid) : null;
+      const here = as ? distanceM(as.lat, as.lng, b.lat, b.lng) <= as.radius : !!matchSite(ss, b.lat, b.lng).at;
+      const had = here && await env.DB.prepare("SELECT 1 FROM pings WHERE emp_id = ? AND kind = 'in' AND ms >= ?").bind(emp.id, sh.start - W0).first();
+      if (here && !had) kind = 'in';
+    }
+  }
 
   // 防灌爆：同一人 20 秒內只記一筆
   const last = await env.DB.prepare('SELECT id, ms, lat FROM pings WHERE emp_id = ? ORDER BY ms DESC LIMIT 1').bind(emp.id).first();
@@ -677,7 +688,7 @@ async function buildReport(env, from, to) {
   const { results: rows } = await env.DB.prepare(
     `SELECT s.emp_id, s.date, s.site_id AS s_site, e.name, e.emp_no, e.site_id AS e_site, e.roam, e.auto_ping, sh.code, sh.name AS shift, sh.start, sh.end
      FROM schedule s JOIN employees e ON e.id = s.emp_id JOIN shifts sh ON sh.code = s.shift_code
-     WHERE s.date BETWEEN ? AND ? AND (COALESCE(e.roam, 0) = 1 OR COALESCE(e.auto_ping, '') <> '') ORDER BY s.date, sh.start, e.name`).bind(from, to).all(); // 只有幹部／機動依班表判定
+     WHERE s.date BETWEEN ? AND ? ORDER BY s.date, sh.start, e.name`).bind(from, to).all(); // 有排班的人都依班表判定（一般員工比對排班案場）
   const sites = await activeSites(env);
   const siteMap = Object.fromEntries(sites.map((s) => [s.id, s]));
   const W = WINDOW_MIN * 60e3;
@@ -700,7 +711,9 @@ async function buildReport(env, from, to) {
     const roam = !!(r.roam || r.auto_ping); // 幹部／機動不比對案場
     const site = roam ? null : (siteMap[r.s_site || r.e_site] || null);
     const all = byEmp[r.emp_id] || [];
-    const ps = all.filter((p) => !p.manual);
+    // 一般員工：只認在排班案場範圍內的定位（打開系統、背景自動定位、按上下班都算；異地簽到不算）
+    const inSite = (p) => site ? distanceM(site.lat, site.lng, p.lat, p.lng) <= site.radius : !!matchSite(sites, p.lat, p.lng).at;
+    const ps = all.filter((p) => !p.manual && (roam || (p.kind !== 'check' && inSite(p))));
     const fixIn = all.find((p) => p.manual && p.io === 'in' && p.date === r.date);
     const fixOut = all.find((p) => p.manual && p.io === 'out' && p.date === r.date);
     const leave = leaves.find((l) => l.emp_id === r.emp_id && l.date <= r.date && l.date_to >= r.date);
@@ -745,15 +758,19 @@ async function buildReport(env, from, to) {
 
   // 一般員工：不用排班；出勤只認「在案場範圍內按的上班／下班」（＋核准的補卡）。
   // 單純打開 App 的自動定位、或不在案場範圍按的，只留在後台定位紀錄，不算出勤。
+  const spans = {}; // 有排班的時段改由上面依班表判定，這裡不重複列
+  for (const r of rows) (spans[r.emp_id] ||= []).push(shiftSpan(r.date, r));
   const day = {};
   for (const p of pings) {
     if (p.roam || p.auto_ping) continue;
+    if ((spans[p.emp_id] || []).some((x) => p.ms >= x.start - W && p.ms <= x.end + W)) continue;
     const d = twDate(p.ms); if (d < from || d > to) continue;
     const k = p.emp_id + '|' + d;
     (day[k] ||= { emp_id: p.emp_id, date: d, name: p.name, empNo: p.emp_no || '', ps: [] }).ps.push(p);
   }
   for (const f of fixes) { // 一般員工的補卡（當天沒有定位紀錄時也列出）
     if (f.date < from || f.date > to) continue;
+    if (rows.some((r) => r.emp_id === f.emp_id && r.date === f.date)) continue;
     const any = byEmp[f.emp_id] && byEmp[f.emp_id].find((p) => !p.manual);
     if (any && (any.roam || any.auto_ping)) continue;
     const k = f.emp_id + '|' + f.date;
