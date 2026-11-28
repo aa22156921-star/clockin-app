@@ -1,0 +1,10 @@
+name = "clockin-local-test"
+main = "../_worker.js"
+compatibility_date = "2025-01-01"
+[[d1_databases]]
+binding = "DB"
+database_name = "testdb"
+database_id = "00000000-0000-0000-0000-000000000000"
+[vars]
+ADMIN_KEY = "testkey"
+ID_SALT = "salt"

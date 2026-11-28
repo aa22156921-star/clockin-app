@@ -1,0 +1,15 @@
+import { execSync } from 'node:child_process'; import crypto from 'node:crypto';
+const B='http://127.0.0.1:8799', sha=(s)=>crypto.createHash('sha256').update(s).digest('hex'), tok=(i)=>sha('device-'+i);
+const tw=(ms)=>new Date(ms+8*3600e3).toISOString(), day=(ms)=>tw(ms).slice(0,10), now=Date.now(), y=day(now-86400e3), y2=day(now-2*86400e3);
+execSync(`npx wrangler@3 d1 execute testdb --local --command "DELETE FROM requests; DELETE FROM schedule WHERE emp_id IN (2,3); INSERT INTO schedule (emp_id,date,shift_code,site_id) VALUES (2,'${y}','PAST',1),(3,'${y2}','NIGHT',1);"`,{stdio:'ignore'});
+const req=async(id,b)=>{const r=await fetch(B+'/api/request',{method:'POST',headers:{'Content-Type':'application/json','X-Device':tok(id)},body:JSON.stringify({kind:'punch',reason:'忘記打卡',...b})});return [r.status,(await r.json()).error||'ok'];};
+const t=[];const c=(n,cond,g)=>t.push([cond?'PASS':'FAIL',n,JSON.stringify(g)]);
+let r;
+r=await req(2,{date:y,io:'in',time:'18:01'}); c('早班補上班 18:01（晚於下班）→ 拒絕',r[0]===400,r);
+r=await req(2,{date:y,io:'in',time:'08:10'}); c('早班補上班 08:10 → 可以',r[0]===200,r);
+r=await req(2,{date:y,io:'out',time:'07:00'}); c('早班補下班 07:00（早於上班）→ 拒絕',r[0]===400,r);
+r=await req(2,{date:y,io:'out',time:'12:00'}); c('早班補下班 12:00 → 可以',r[0]===200,r);
+r=await req(3,{date:y2,io:'out',time:'07:00'}); c('夜班補下班 隔天 07:00 → 可以',r[0]===200,r);
+r=await req(3,{date:y2,io:'in',time:'19:05'}); c('夜班補上班 19:05 → 可以',r[0]===200,r);
+r=await req(4,{date:y,io:'in',time:'23:00'}); c('沒排班那天 → 照舊可以補',r[0]===200,r);
+for(const x of t)console.log(x.join(' | '));

@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS leave_types (id TEXT PRIMARY KEY, name TEXT NOT NULL,
 
 CREATE TABLE IF NOT EXISTS nueip_diff (date TEXT NOT NULL, emp_no TEXT NOT NULL, name TEXT, admin_in TEXT, admin_out TEXT, nueip_in TEXT, nueip_out TEXT, nueip_method TEXT, status TEXT, exported_ms INTEGER, checked_ms INTEGER, PRIMARY KEY (date, emp_no));
 
-CREATE TABLE IF NOT EXISTS pay_calc_member (period TEXT NOT NULL, name TEXT NOT NULL, dept TEXT NOT NULL DEFAULT '', title TEXT, status TEXT, base REAL, daily REAL, duty REAL, full_att REAL, perf REAL, other REAL, days REAL, src_period TEXT, added_ms INTEGER, sched_days REAL, att_days REAL, leave_days REAL, att_ms INTEGER, grade REAL, labor_x INTEGER DEFAULT 0, health_x INTEGER DEFAULT 0, dependents INTEGER DEFAULT 0, health_grade REAL, health_fix REAL, pension_self REAL, ins_src TEXT, PRIMARY KEY (period, name, dept));
+CREATE TABLE IF NOT EXISTS pay_calc_member (period TEXT NOT NULL, name TEXT NOT NULL, dept TEXT NOT NULL DEFAULT '', title TEXT, status TEXT, base REAL, daily REAL, duty REAL, full_att REAL, perf REAL, other REAL, days REAL, src_period TEXT, added_ms INTEGER, sched_days REAL, att_days REAL, leave_days REAL, att_ms INTEGER, grade REAL, labor_x INTEGER DEFAULT 0, health_x INTEGER DEFAULT 0, dependents INTEGER DEFAULT 0, health_grade REAL, health_fix REAL, pension_self REAL, ins_src TEXT, leave_json TEXT, PRIMARY KEY (period, name, dept));
 
 CREATE TABLE IF NOT EXISTS pay_period (period TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'draft', note TEXT, created_ms INTEGER, calc_ms INTEGER, locked_ms INTEGER, locked_by TEXT);
 
@@ -157,10 +157,16 @@ SELECT j.emp_id, e.emp_no, e.name, j.date, j.shift_code, j.site_id, j.start, j.e
 FROM j JOIN employees e ON e.id = j.emp_id;
 
 CREATE VIEW att_monthly AS
-SELECT substr(date,1,7) AS period, emp_id, emp_no, name,
+-- 每日出勤只算一次（MATERIALIZED），請假明細只統計整天請假
+WITH d AS MATERIALIZED (SELECT * FROM att_daily),
+lj AS (SELECT period, emp_id, json_group_object(leave_name, c) AS leave_json
+       FROM (SELECT substr(date,1,7) AS period, emp_id, leave_name, count(*) AS c FROM d
+             WHERE day_status='請假' AND leave_name IS NOT NULL GROUP BY 1, 2, 3) GROUP BY 1, 2)
+SELECT substr(d.date,1,7) AS period, d.emp_id, d.emp_no, d.name,
   count(*) AS sched_days, sum(sched_min) AS sched_min,
   sum(day_status='正常') AS ok_days, sum(day_status='缺卡') AS partial_days, sum(day_status='未打卡') AS nopunch_days, sum(day_status='請假') AS leave_days,
   coalesce(sum(work_min),0) AS work_min, sum(after_min) AS after_min, sum(late_min) AS late_min, sum(early_min) AS early_min,
   sum(miss_in) AS miss_in, sum(miss_out) AS miss_out,
-  (SELECT json_group_object(leave_name, c) FROM (SELECT leave_name, count(*) c FROM att_daily a2 WHERE a2.emp_id=att_daily.emp_id AND substr(a2.date,1,7)=substr(att_daily.date,1,7) AND leave_name IS NOT NULL GROUP BY leave_name)) AS leave_json
-FROM att_daily GROUP BY substr(date,1,7), emp_id;
+  max(lj.leave_json) AS leave_json
+FROM d LEFT JOIN lj ON lj.period = substr(d.date,1,7) AND lj.emp_id = d.emp_id
+GROUP BY substr(d.date,1,7), d.emp_id;
