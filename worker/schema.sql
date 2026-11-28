@@ -170,3 +170,20 @@ SELECT substr(d.date,1,7) AS period, d.emp_id, d.emp_no, d.name,
   max(lj.leave_json) AS leave_json
 FROM d LEFT JOIN lj ON lj.period = substr(d.date,1,7) AND lj.emp_id = d.emp_id
 GROUP BY substr(d.date,1,7), d.emp_id;
+
+-- 沒排班但在案場按上班（或核准補上班卡）的天數：結算「從打卡帶入」時算進出勤
+CREATE VIEW IF NOT EXISTS att_unsched AS
+WITH ev AS (
+  SELECT p.emp_id, p.ms FROM pings p JOIN employees e ON e.id = p.emp_id
+   WHERE p.kind = 'in' AND p.lat IS NOT NULL
+     AND (coalesce(e.roam,0)=1 OR coalesce(e.auto_ping,'') NOT IN ('','不追蹤') OR EXISTS (
+       SELECT 1 FROM sites st WHERE st.active=1 AND st.lat IS NOT NULL
+         AND 6371000*sqrt(radians(p.lat-st.lat)*radians(p.lat-st.lat) + (radians(p.lng-st.lng)*cos(radians(st.lat)))*(radians(p.lng-st.lng)*cos(radians(st.lat)))) <= coalesce(st.radius,200)))
+  UNION ALL
+  SELECT emp_id, CAST(strftime('%s', date||' '||time) AS INTEGER)*1000 - 28800000 FROM requests
+   WHERE kind='punch' AND status='approved' AND io='in' AND time IS NOT NULL),
+days AS (SELECT DISTINCT emp_id, date(ms/1000 + 28800, 'unixepoch') AS d FROM ev)
+SELECT substr(d,1,7) AS period, emp_id, count(*) AS days FROM days
+ WHERE NOT EXISTS (SELECT 1 FROM schedule s JOIN shifts sh ON sh.code = s.shift_code WHERE s.emp_id = days.emp_id
+                   AND (s.date = days.d OR (s.date = date(days.d, '-1 day') AND sh.end <= sh.start)))
+ GROUP BY 1, 2;

@@ -32,6 +32,7 @@ r = await ping(1, { ...A, acc: 10 }); check('1 有排班在案場打開 → 自�
 await new Promise((s) => setTimeout(s, 21000));
 r = await ping(1, { ...A, acc: 10 }); check('1 再打開一次 → 不重複記上班', r.kind === null, r);
 r = await ping(2, { ...A, acc: 10 }); check('2 沒排班 → 不自動', r.kind === null, r);
+r = await ping(2, { ...A, acc: 10, kind: 'in' }); check('2 沒排班自己按上班 → 記上班', r.kind === 'in', r);
 r = await ping(3, { ...Bsite, acc: 10 }); check('3 在別的案場 → 不自動', r.kind === null, r);
 r = await ping(4, { ...A, acc: 10 }); check('4 還沒到上班時段 → 不自動', r.kind === null, r);
 r = await ping(5, { ...A, acc: 10 }); check('5 幹部 → 不走自動到班', r.kind === null, r);
@@ -59,12 +60,13 @@ check('今日異常：3 列上班未打卡', items.some((x) => x.startsWith('排
 check('今日異常：1 晚 30 分到 → 列遲到、不列未到班', items.some((x) => x.startsWith('一般在場:遲到')) && !items.some((x) => x.startsWith('一般在場:未到班')), items);
 check('今日異常：4 未到時段 → 不列', !items.some((x) => x.startsWith('還沒到班時間:')), items);
 const post = async (p, b) => (await fetch(B + '/api/admin' + p, { method: 'POST', headers: { 'X-Admin-Key': 'testkey', 'Content-Type': 'application/json' }, body: JSON.stringify(b) })).json();
-for (const n of ['昨天請假', '一般在場']) { await post('/paycalc/remove', { period: today.slice(0,7), name: n, dept: '' }); await post('/paycalc/add', { period: today.slice(0,7), name: n }); }
+for (const n of ['昨天請假', '一般在場', '沒排班']) { await post('/paycalc/remove', { period: today.slice(0,7), name: n, dept: '' }); await post('/paycalc/add', { period: today.slice(0,7), name: n }); }
 const sy = await (await fetch(B + '/api/admin/paycalc/sync_att', { method: 'POST', headers: { 'X-Admin-Key': 'testkey', 'Content-Type': 'application/json' }, body: JSON.stringify({ period: today.slice(0,7) }) })).json();
 const pc = await adm('/paycalc?period=' + today.slice(0,7));
 const pr = Object.fromEntries((pc.rows || []).map((x) => [x.name, x]));
 check('從打卡帶入：同步成功', sy.ok === true, sy);
 check('從打卡帶入：請假明細帶到結算名冊', pr['昨天請假'] && /事假/.test(pr['昨天請假'].leave_json || '') && (yest.slice(0,7) !== today.slice(0,7) || pr['昨天請假'].leave_days === 1), pr['昨天請假']);
+check('從打卡帶入：沒排班但在案場按上班 → 算 1 天', pr['沒排班'] && pr['沒排班'].att_days === 1, pr['沒排班']);
 check('從打卡帶入：出勤天數', pr['一般在場'] && pr['一般在場'].att_days === 1, pr['一般在場']);
 const _o = execSync(`npx --yes wrangler@3 d1 execute testdb --local --json --command "SELECT name, ok_days, partial_days, nopunch_days, leave_days FROM att_monthly ORDER BY emp_id"`).toString(); const am = JSON.parse(_o.slice(_o.indexOf("[")));
 const amr = Object.fromEntries(am[0].results.map((x) => [x.name, x]));

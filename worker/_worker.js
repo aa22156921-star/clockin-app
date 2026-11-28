@@ -927,9 +927,13 @@ async function adminRoutes(req, env, url, p, M, DB, b) {
     // 從打卡系統帶入當月出勤：排班天數、打卡出勤（正常＋缺卡）、請假天數；依姓名對應
     const period = String(b.period || '');
     if (!/^\d{4}-\d{2}$/.test(period)) return json({ error: '月份不正確' }, 400);
+    // 有排班的天依班表判定；沒排班但在案場按了上班（或核准補上班卡）的天也算出勤（att_unsched）
     const r = await DB.prepare(`UPDATE pay_calc_member SET sched_days = a.s, att_days = a.a, leave_days = a.l, leave_json = a.j, att_ms = ?
-      FROM (SELECT name, sum(sched_days) AS s, sum(ok_days + partial_days) AS a, sum(leave_days) AS l, max(leave_json) AS j FROM att_monthly WHERE period = ? GROUP BY name) AS a
-      WHERE pay_calc_member.period = ? AND pay_calc_member.name = a.name`).bind(Date.now(), period, period).run();
+      FROM (SELECT e.name, coalesce(m.s, 0) AS s, coalesce(m.a, 0) + coalesce(u.days, 0) AS a, coalesce(m.l, 0) AS l, m.j AS j FROM employees e
+        LEFT JOIN (SELECT emp_id, sum(sched_days) AS s, sum(ok_days + partial_days) AS a, sum(leave_days) AS l, max(leave_json) AS j FROM att_monthly WHERE period = ? GROUP BY emp_id) m ON m.emp_id = e.id
+        LEFT JOIN att_unsched u ON u.emp_id = e.id AND u.period = ?
+        WHERE m.emp_id IS NOT NULL OR u.emp_id IS NOT NULL) AS a
+      WHERE pay_calc_member.period = ? AND pay_calc_member.name = a.name`).bind(Date.now(), period, period, period).run();
     return json({ ok: true, n: r.meta ? r.meta.changes : 0 });
   }
   if (p === '/paycalc/remove' && M === 'POST') {
