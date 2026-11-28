@@ -45,7 +45,6 @@ async function ensureSchema(env) {
     env.DB.prepare(`CREATE TABLE IF NOT EXISTS devices (id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id INTEGER NOT NULL, device_hash TEXT NOT NULL UNIQUE, ua TEXT, bound_at TEXT NOT NULL)`),
     env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_devices_emp ON devices(emp_id)`),
     env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_pings_ms ON pings(ms)`), // 依日期查定位紀錄用，避免整張表掃描
-    env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_emp_nueip ON employees(nueip_uid)`),
     // NUEIP 部門 → 工地對照（每天由排程同步）；mode：site 有工地、roam 機動不比對、none 尚無座標
     env.DB.prepare(`CREATE TABLE IF NOT EXISTS dept_map (dept_id TEXT PRIMARY KEY, dept_name TEXT NOT NULL, code TEXT, site_id INTEGER, mode TEXT NOT NULL DEFAULT 'site')`),
     // 補卡／請假申請
@@ -84,6 +83,8 @@ async function ensureSchema(env) {
   // 人事名冊延伸欄位（每天由排程從 NUEIP「員工組成」資料集同步；只在後台顯示、匯出會留紀錄）
   for (const c of ['gender TEXT', 'age INTEGER', 'work_type TEXT', 'country TEXT', 'military TEXT', 'marriage TEXT', 'identity TEXT', 'email TEXT', 'status TEXT'])
     try { await env.DB.prepare('ALTER TABLE staff ADD COLUMN ' + c).run(); } catch (e) { /* 已存在 */ }
+  // 索引要等欄位補齊後才建（全新資料庫時 nueip_uid 由上方 ALTER 加入）
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_emp_nueip ON employees(nueip_uid)').run();
   schemaReady = true;
 }
 
@@ -372,6 +373,13 @@ async function apiRequest(req, env) {
     if (!TIME_RE.test(b.time || '')) return json({ error: '請選時間' }, 400);
     if (b.date === today && twMs(today, b.time) > Date.now() + 5 * 60e3) return json({ error: '不能補未來的時間' }, 400);
     if (!reason) return json({ error: '請選擇補卡原因' }, 400);
+    // 有排班的那天：補卡時間要和班別對得上（上班不能晚於下班時間、下班不能早於上班時間；夜班下班算隔天）
+    const sh = await DB.prepare('SELECT sh.start, sh.end FROM schedule s JOIN shifts sh ON sh.code = s.shift_code WHERE s.emp_id = ? AND s.date = ?').bind(emp.id, b.date).first();
+    if (sh) {
+      const sp = shiftSpan(b.date, sh); let t = twMs(b.date, b.time);
+      if (b.io === 'in') { if (t < sp.start - 12 * 3600e3) t += 86400e3; if (t >= sp.end) return json({ error: '這天的班是 ' + sh.start + '–' + sh.end + '，上班時間不能晚於下班時間；是不是要補「下班」？' }, 400); }
+      else { if (t < sp.start && sh.end <= sh.start) t += 86400e3; if (t <= sp.start) return json({ error: '這天的班是 ' + sh.start + '–' + sh.end + '，下班時間要晚於上班時間' }, 400); if (t > Date.now() + 5 * 60e3) return json({ error: '不能補未來的時間' }, 400); }
+    }
     const dup = await DB.prepare(`SELECT id FROM requests WHERE emp_id = ? AND kind = 'punch' AND date = ? AND io = ? AND status IN ('pending','approved')`).bind(emp.id, b.date, b.io).first();
     if (dup) return json({ error: '這天的' + (b.io === 'in' ? '上班' : '下班') + '已經申請過了' }, 409);
     await DB.prepare(`INSERT INTO requests (emp_id, kind, date, io, time, reason, lat, lng, acc, created_ms) VALUES (?, 'punch', ?, ?, ?, ?, ?, ?, ?, ?)`)
